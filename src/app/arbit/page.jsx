@@ -142,9 +142,10 @@ export default function ArbiFlow() {
 
     const estTax = grossProfit > 0 ? grossProfit * (estoniaTaxRate / 100) : 0;
     const afterEst = grossProfit - estTax;
-    const indTax = afterEst > 0 ? afterEst * (indiaTaxRate / 100) : 0;
-    const netProfit = afterEst - indTax;
-    const totalTax = estTax + indTax;
+const indTax = grossProfit > 0 ? grossProfit * (indiaTaxRate / 100) : 0;
+const totalTax = estTax + indTax;
+const netProfit = grossProfit - estTax - indTax;
+
 
     const roi = inr > 0 ? (grossProfitBeforeCharge / inr) * 100 : 0;
     const netRoi = inr > 0 ? (netProfit / inr) * 100 : 0;
