@@ -9,7 +9,8 @@ import {
   Calendar, Banknote, Receipt, Target, PieChart as PieChartIcon,
   BarChart3, LineChart as LineChartIcon, DollarSign, Landmark,
   Building2, Globe2, CreditCard, Calculator, Briefcase,
-  ArrowRightLeft, Activity, Sparkles, AlertCircle, CheckCircle2
+  ArrowRightLeft, Activity, Sparkles, AlertCircle, CheckCircle2,
+  ToggleLeft, ToggleRight
 } from "lucide-react";
 
 const TCS_THRESHOLD = 1_000_000;
@@ -109,6 +110,7 @@ export default function ArbiFlow() {
   const [remitChargePct, setRemitChargePct] = useState("");
   const [estoniaTaxRate] = useState(20);
   const [indiaTaxRate] = useState(30);
+  const [tcsModeEnabled, setTcsModeEnabled] = useState(false);
 
   const isAutoEur = parseFloat(eurRate) > 0 && parseFloat(inrSent) > 0;
   const autoEurValue = isAutoEur
@@ -129,11 +131,30 @@ export default function ArbiFlow() {
     const totalRemitCharge = remitFixed + remitPctAmount;
     const hasRemitCharge = totalRemitCharge > 0;
 
-    const taxableRemit = Math.max(0, inr - TCS_THRESHOLD);
-    const tcsAmount = (taxableRemit * TCS_RATE) / 100;
-    const hasTCS = tcsAmount > 0;
-    const tcsRatio = inr > 0 ? (tcsAmount / inr) * 100 : 0;
-    const remainingBeforeTCS = Math.max(0, TCS_THRESHOLD - inr);
+    // TCS calculation based on mode
+    let tcsAmount = 0;
+    let taxableRemit = 0;
+    let remainingBeforeTCS = 0;
+    let hasTCS = false;
+    let tcsRatio = 0;
+    let tcsDescription = "";
+
+    if (tcsModeEnabled) {
+      // Mode 1: 5% TCS on entire transaction amount
+      tcsAmount = (inr * TCS_RATE) / 100;
+      hasTCS = tcsAmount > 0;
+      taxableRemit = inr;
+      remainingBeforeTCS = 0;
+      tcsRatio = TCS_RATE;
+      tcsDescription = "5% on full amount";
+    } else {
+      // Mode 2: Standard LRS rules - TCS only on amount above ₹10L
+      taxableRemit = Math.max(0, inr - TCS_THRESHOLD);
+      tcsAmount = (taxableRemit * TCS_RATE) / 100;
+      hasTCS = tcsAmount > 0;
+      remainingBeforeTCS = Math.max(0, TCS_THRESHOLD - inr);
+      tcsRatio = inr > 0 ? (tcsAmount / inr) * 100 : 0;
+    }
 
     const usdtBought = usdtPrice > 0 ? eur / usdtPrice : 0;
     const inrReceived = usdtBought * sellRate;
@@ -141,11 +162,9 @@ export default function ArbiFlow() {
     const grossProfit = grossProfitBeforeCharge - totalRemitCharge - tcsAmount;
 
     const estTax = grossProfit > 0 ? grossProfit * (estoniaTaxRate / 100) : 0;
-    const afterEst = grossProfit - estTax;
-const indTax = grossProfit > 0 ? grossProfit * (indiaTaxRate / 100) : 0;
-const totalTax = estTax + indTax;
-const netProfit = grossProfit - estTax - indTax;
-
+    const indTax = grossProfit > 0 ? grossProfit * (indiaTaxRate / 100) : 0;
+    const totalTax = estTax + indTax;
+    const netProfit = grossProfit - estTax - indTax;
 
     const roi = inr > 0 ? (grossProfitBeforeCharge / inr) * 100 : 0;
     const netRoi = inr > 0 ? (netProfit / inr) * 100 : 0;
@@ -160,22 +179,22 @@ const netProfit = grossProfit - estTax - indTax;
       grossProfitBeforeCharge, grossProfit,
       remitFixed, remitPct, remitPctAmount,
       totalRemitCharge, hasRemitCharge, remitChargeRatio,
-      tcsAmount, hasTCS, tcsRatio, taxableRemit, remainingBeforeTCS,
-      estTax, afterEst, indTax, netProfit, totalTax,
+      tcsAmount, hasTCS, tcsRatio, taxableRemit, remainingBeforeTCS, tcsDescription,
+      estTax, afterEst: grossProfit - estTax, indTax, netProfit, totalTax,
       roi, netRoi, effTaxRate,
       mGross: monthly(grossProfit), mEstTax: monthly(estTax),
-      mAfterEst: monthly(afterEst), mIndTax: monthly(indTax),
+      mAfterEst: monthly(grossProfit - estTax), mIndTax: monthly(indTax),
       mNet: monthly(netProfit), mTotalTax: monthly(totalTax),
       mRemitCharge: monthly(totalRemitCharge), mTCS: monthly(tcsAmount),
       yGross: yearly(grossProfit), yEstTax: yearly(estTax),
-      yAfterEst: yearly(afterEst), yIndTax: yearly(indTax),
+      yAfterEst: yearly(grossProfit - estTax), yIndTax: yearly(indTax),
       yNet: yearly(netProfit), yTotalTax: yearly(totalTax),
       yRemitCharge: yearly(totalRemitCharge), yTCS: yearly(tcsAmount),
       yDays: days * 12,
       hasData: inr > 0 && eur > 0 && usdtPrice > 0 && sellRate > 0,
     };
   }, [inrSent, eurRate, eurReceivedManual, usdtPriceEur, inrSellRate, daysPerMonth,
-      remitChargeFixed, remitChargePct, estoniaTaxRate, indiaTaxRate]);
+      remitChargeFixed, remitChargePct, estoniaTaxRate, indiaTaxRate, tcsModeEnabled]);
 
   const barData = [
     { name: "INR Sent", value: c.inr },
@@ -345,6 +364,81 @@ const netProfit = grossProfit - estTax - indTax;
           </div>
         </div>
 
+        {/* ── TCS Mode Toggle ── */}
+        <div>
+          <h2 className="newq text-xs sm:text-base font-black text-gray-500 uppercase tracking-widest mb-3 sm:mb-4 flex items-center gap-2">
+            <Landmark className="w-3 h-3 sm:w-4 sm:h-4" /> TCS Configuration
+          </h2>
+          <div className={`rounded-2xl sm:rounded-3xl p-4 sm:p-6 border-2 transition-all ${tcsModeEnabled ? "bg-purple-50 border-purple-300" : "bg-gray-50 border-gray-200"}`}>
+            <div className="flex items-start gap-3 sm:gap-4">
+              <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl shrink-0 ${tcsModeEnabled ? "bg-purple-200" : "bg-gray-200"}`}>
+                <Landmark className={`w-6 h-6 ${tcsModeEnabled ? "text-purple-700" : "text-gray-500"}`} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-2">
+                  <h3 className="newq font-black text-gray-800 text-base sm:text-lg">
+                    TCS Mode: {tcsModeEnabled ? "Full TCS (5% on entire amount)" : "Standard LRS (5% on excess above ₹10L)"}
+                  </h3>
+                  <button
+                    onClick={() => setTcsModeEnabled(!tcsModeEnabled)}
+                    className={`flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl font-bold text-sm sm:text-base transition-all ${tcsModeEnabled ? "bg-purple-600 text-white hover:bg-purple-700" : "bg-gray-600 text-white hover:bg-gray-700"}`}
+                  >
+                    {tcsModeEnabled ? <ToggleRight className="w-4 h-4 sm:w-5 sm:h-5" /> : <ToggleLeft className="w-4 h-4 sm:w-5 sm:h-5" />}
+                    {tcsModeEnabled ? "Full TCS ON" : "Standard Mode"}
+                  </button>
+                </div>
+                <p className="newq text-xs sm:text-sm text-gray-500 mb-3">
+                  {tcsModeEnabled 
+                    ? "⚠️ Full TCS Mode: 5% TCS applied on total remittance amount. Suitable for high-value transactions where full amount is taxable." 
+                    : "📋 Standard Mode: 5% TCS only on amount exceeding ₹10,00,000 (LRS limit). First ₹10L is TCS-free."}
+                </p>
+                {c.inr > 0 && (
+                  <div className="bg-white rounded-xl sm:rounded-2xl p-3 sm:p-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="newq text-xs font-black text-gray-500 uppercase">Current TCS Impact</span>
+                      <span className="newq text-xs font-bold text-purple-600">{c.tcsDescription}</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="newq text-gray-500">Total Remittance</span>
+                        <span className="newq font-bold text-gray-800">{fmt(c.inr)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="newq text-gray-500">TCS Amount</span>
+                        <span className={`newq font-bold ${c.hasTCS ? "text-purple-600" : "text-green-600"}`}>
+                          {c.hasTCS ? fmt(c.tcsAmount) : "₹0"}
+                        </span>
+                      </div>
+                      {!tcsModeEnabled && c.inr <= TCS_THRESHOLD && (
+                        <div className="bg-green-50 rounded-lg p-2 text-center">
+                          <CheckCircle2 className="w-4 h-4 text-green-600 inline mr-1" />
+                          <span className="newq text-xs text-green-700 font-semibold">Within ₹10L limit — No TCS</span>
+                        </div>
+                      )}
+                      {!tcsModeEnabled && c.inr > TCS_THRESHOLD && (
+                        <div className="bg-purple-50 rounded-lg p-2 text-center">
+                          <AlertCircle className="w-4 h-4 text-purple-600 inline mr-1" />
+                          <span className="newq text-xs text-purple-700 font-semibold">
+                            Excess: {fmt(c.taxableRemit)} @ 5% = {fmt(c.tcsAmount)}
+                          </span>
+                        </div>
+                      )}
+                      {tcsModeEnabled && (
+                        <div className="bg-purple-100 rounded-lg p-2 text-center">
+                          <AlertCircle className="w-4 h-4 text-purple-700 inline mr-1" />
+                          <span className="newq text-xs text-purple-700 font-semibold">
+                            Full TCS: {fmt(c.inr)} @ 5% = {fmt(c.tcsAmount)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* ── Remittance Charges ── */}
         <div>
           <h2 className="newq text-xs sm:text-base font-black text-gray-500 uppercase tracking-widest mb-3 sm:mb-4 flex items-center gap-2">
@@ -413,79 +507,136 @@ const netProfit = grossProfit - estTax - indTax;
           </div>
         </div>
 
-        {/* ── TCS Section ── */}
-        {c.inr > 0 && (
+        {/* ── TCS Section (Detailed) ── */}
+        {c.inr > 0 && c.hasTCS && (
           <div>
             <h2 className="newq text-xs sm:text-base font-black text-gray-500 uppercase tracking-widest mb-3 sm:mb-4 flex items-center gap-2">
-              <Landmark className="w-3 h-3 sm:w-4 sm:h-4" /> TCS — Tax Collected at Source (LRS)
+              <Landmark className="w-3 h-3 sm:w-4 sm:h-4" /> TCS — Tax Collected at Source
             </h2>
-            <div className={`rounded-2xl sm:rounded-3xl p-4 sm:p-6 border ${c.hasTCS ? "bg-sky-50 border-sky-200" : "bg-green-50 border-green-200"}`}>
+            <div className={`rounded-2xl sm:rounded-3xl p-4 sm:p-6 border ${tcsModeEnabled ? "bg-purple-50 border-purple-200" : "bg-sky-50 border-sky-200"}`}>
               <div className="flex items-start gap-3 sm:gap-4">
-               
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-2">
                     <h3 className="newq font-black text-gray-800 text-sm sm:text-lg">
-                      {c.hasTCS ? "TCS Applicable — Excess Above ₹10L" : "No TCS — Within ₹10L Limit"}
+                      {tcsModeEnabled 
+                        ? `TCS Applied — 5% on Full Amount (${fmt(c.inr)})`
+                        : c.hasTCS 
+                          ? "TCS Applicable — Excess Above ₹10L" 
+                          : "No TCS — Within ₹10L Limit"}
                     </h3>
-                    <span className={`text-xs font-black px-2 sm:px-3 py-0.5 sm:py-1 rounded-full ${c.hasTCS ? "bg-sky-200 text-sky-700" : "bg-green-200 text-green-700"}`}>
+                    <span className={`text-xs font-black px-2 sm:px-3 py-0.5 sm:py-1 rounded-full ${tcsModeEnabled ? "bg-purple-200 text-purple-700" : "bg-sky-200 text-sky-700"}`}>
                       {c.hasTCS ? `TCS = ${fmt(c.tcsAmount)}` : "₹0 TCS"}
                     </span>
                   </div>
 
                   {/* Rule explanation */}
                   <div className="bg-white rounded-xl sm:rounded-2xl p-3 sm:p-4 mb-3 sm:mb-4">
-                    <p className="newq text-xs font-black text-gray-500 uppercase tracking-widest mb-2 sm:mb-3 flex items-center gap-1">📋 LRS TCS Rule</p>
+                    <p className="newq text-xs font-black text-gray-500 uppercase tracking-widest mb-2 sm:mb-3 flex items-center gap-1">📋 TCS Rule {tcsModeEnabled ? "(Full Mode)" : "(Standard Mode)"}</p>
                     <div className="space-y-1.5 sm:space-y-2">
-                      {[
-                        { n: "1", bg: "bg-green-100", c: "text-green-700", t: <>First <strong>₹10L</strong> → <strong className="text-green-600">₹0 TCS (free)</strong></> },
-                        { n: "2", bg: "bg-sky-100", c: "text-sky-700", t: <>Amount <strong>above ₹10L</strong> → <strong className="text-sky-600">5% TCS on excess only</strong></> },
-                        { n: "3", bg: "bg-violet-100", c: "text-violet-700", t: <>₹40L sent → ₹10L free + ₹30L × 5% = <strong>₹1,50,000 TCS</strong></> },
-                        { n: "4", bg: "bg-amber-100", c: "text-amber-700", t: <>Collected by bank — <strong className="text-amber-600">fully refundable via ITR</strong></> },
-                      ].map(({ n, bg, c: col, t }) => (
-                        <div key={n} className="flex items-start gap-2">
-                          <div className={`w-5 h-5 sm:w-6 sm:h-6 ${bg} rounded-full flex items-center justify-center text-xs font-black ${col} shrink-0 mt-0.5`}>{n}</div>
-                          <p className="newq text-xs sm:text-sm text-gray-600">{t}</p>
-                        </div>
-                      ))}
+                      {tcsModeEnabled ? (
+                        <>
+                          {[
+                            { n: "1", bg: "bg-purple-100", c: "text-purple-700", t: <>TCS applied on <strong>entire remittance amount</strong> → <strong className="text-purple-600">5% of total</strong></> },
+                            { n: "2", bg: "bg-purple-100", c: "text-purple-700", t: <>No exemption limit — <strong>full amount taxable</strong></> },
+                            { n: "3", bg: "bg-purple-100", c: "text-purple-700", t: <>Example: ₹{TCS_THRESHOLD.toLocaleString('en-IN')} → <strong>₹{(TCS_THRESHOLD * 5 / 100).toLocaleString('en-IN')} TCS</strong></> },
+                            { n: "4", bg: "bg-amber-100", c: "text-amber-700", t: <>Collected by bank — <strong className="text-amber-600">fully refundable via ITR</strong></> },
+                          ].map(({ n, bg, c: col, t }) => (
+                            <div key={n} className="flex items-start gap-2">
+                              <div className={`w-5 h-5 sm:w-6 sm:h-6 ${bg} rounded-full flex items-center justify-center text-xs font-black ${col} shrink-0 mt-0.5`}>{n}</div>
+                              <p className="newq text-xs sm:text-sm text-gray-600">{t}</p>
+                            </div>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          {[
+                            { n: "1", bg: "bg-green-100", c: "text-green-700", t: <>First <strong>₹10L</strong> → <strong className="text-green-600">₹0 TCS (free)</strong></> },
+                            { n: "2", bg: "bg-sky-100", c: "text-sky-700", t: <>Amount <strong>above ₹10L</strong> → <strong className="text-sky-600">5% TCS on excess only</strong></> },
+                            { n: "3", bg: "bg-violet-100", c: "text-violet-700", t: <>₹40L sent → ₹10L free + ₹30L × 5% = <strong>₹1,50,000 TCS</strong></> },
+                            { n: "4", bg: "bg-amber-100", c: "text-amber-700", t: <>Collected by bank — <strong className="text-amber-600">fully refundable via ITR</strong></> },
+                          ].map(({ n, bg, c: col, t }) => (
+                            <div key={n} className="flex items-start gap-2">
+                              <div className={`w-5 h-5 sm:w-6 sm:h-6 ${bg} rounded-full flex items-center justify-center text-xs font-black ${col} shrink-0 mt-0.5`}>{n}</div>
+                              <p className="newq text-xs sm:text-sm text-gray-600">{t}</p>
+                            </div>
+                          ))}
+                        </>
+                      )}
                     </div>
                   </div>
 
                   {/* Progress meter */}
                   <div className="bg-white rounded-xl sm:rounded-2xl p-3 sm:p-4 mb-3 sm:mb-4">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="newq text-xs font-black text-gray-500 uppercase">LRS Meter</span>
-                      <span className="newq text-xs font-bold text-gray-400">Limit: ₹10L</span>
+                      <span className="newq text-xs font-black text-gray-500 uppercase">TCS Meter</span>
+                      <span className="newq text-xs font-bold text-gray-400">
+                        {tcsModeEnabled ? "Full TCS Mode" : "Limit: ₹10L"}
+                      </span>
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-3 sm:h-4 overflow-hidden flex">
-                      <div className="h-full bg-green-400 transition-all duration-500"
-                        style={{ width: `${Math.min((Math.min(c.inr, TCS_THRESHOLD) / TCS_THRESHOLD) * 100, 100)}%` }} />
-                      {c.hasTCS && (
-                        <div className="h-full bg-sky-400 transition-all duration-500"
-                          style={{ width: `${Math.min((c.taxableRemit / TCS_THRESHOLD) * 100, 100)}%` }} />
+                      {!tcsModeEnabled && (
+                        <>
+                          <div className="h-full bg-green-400 transition-all duration-500"
+                            style={{ width: `${Math.min((Math.min(c.inr, TCS_THRESHOLD) / TCS_THRESHOLD) * 100, 100)}%` }} />
+                          {c.hasTCS && (
+                            <div className="h-full bg-sky-400 transition-all duration-500"
+                              style={{ width: `${Math.min((c.taxableRemit / TCS_THRESHOLD) * 100, 100)}%` }} />
+                          )}
+                        </>
+                      )}
+                      {tcsModeEnabled && (
+                        <div className="h-full bg-purple-400 transition-all duration-500"
+                          style={{ width: `100%` }} />
                       )}
                     </div>
                     <div className="flex justify-between mt-1.5 flex-wrap gap-1">
-                      <span className="newq text-xs text-green-600 font-bold">🟢 Free: {fmt(Math.min(c.inr, TCS_THRESHOLD))}</span>
-                      {c.hasTCS
-                        ? <span className="newq text-xs text-sky-600 font-bold">🔵 Taxable: {fmt(c.taxableRemit)}</span>
-                        : <span className="newq text-xs text-green-500 font-semibold">💚 {fmt(c.remainingBeforeTCS)} more before TCS</span>}
+                      {!tcsModeEnabled && (
+                        <>
+                          <span className="newq text-xs text-green-600 font-bold">🟢 Free: {fmt(Math.min(c.inr, TCS_THRESHOLD))}</span>
+                          {c.hasTCS
+                            ? <span className="newq text-xs text-sky-600 font-bold">🔵 Taxable: {fmt(c.taxableRemit)}</span>
+                            : <span className="newq text-xs text-green-500 font-semibold">💚 {fmt(c.remainingBeforeTCS)} more before TCS</span>}
+                        </>
+                      )}
+                      {tcsModeEnabled && (
+                        <span className="newq text-xs text-purple-600 font-bold">🟣 Full Amount Taxable: {fmt(c.inr)}</span>
+                      )}
                     </div>
                   </div>
 
                   {c.hasTCS && (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-                      {[
-                        { label: "Total Sent", val: fmt(c.inr), bg: "bg-white", vc: "text-gray-800" },
-                        { label: "Free (₹10L)", val: fmt(TCS_THRESHOLD), bg: "bg-green-100", vc: "text-green-700", sub: "No TCS" },
-                        { label: "Taxable", val: fmt(c.taxableRemit), bg: "bg-sky-100", vc: "text-sky-700", sub: `${fmt(c.inr)} − ₹10L` },
-                        { label: "TCS @ 5%", val: `- ${fmt(c.tcsAmount)}`, bg: "bg-sky-200", vc: "text-sky-800", sub: "Refundable" },
-                      ].map(({ label, val, bg, vc, sub }) => (
-                        <div key={label} className={`${bg} rounded-xl sm:rounded-2xl p-2 sm:p-4 text-center`}>
-                          <p className="newq text-xs text-gray-500 sm:text-sky-700 font-bold uppercase leading-tight">{label}</p>
-                          <p className={`newq text-xs sm:text-base font-black ${vc} break-all mt-0.5`}>{val}</p>
-                          {sub && <p className="newq text-xs text-gray-400 mt-0.5 hidden sm:block">{sub}</p>}
-                        </div>
-                      ))}
+                      {tcsModeEnabled ? (
+                        <>
+                          {[
+                            { label: "Total Sent", val: fmt(c.inr), bg: "bg-white", vc: "text-gray-800" },
+                            { label: "TCS @ 5%", val: `- ${fmt(c.tcsAmount)}`, bg: "bg-purple-100", vc: "text-purple-700", sub: "On full amount" },
+                            { label: "Effective Rate", val: `${TCS_RATE}%`, bg: "bg-purple-200", vc: "text-purple-800", sub: "Full TCS mode" },
+                            { label: "Refundable", val: "Yes (via ITR)", bg: "bg-amber-100", vc: "text-amber-700", sub: "Claimable" },
+                          ].map(({ label, val, bg, vc, sub }) => (
+                            <div key={label} className={`${bg} rounded-xl sm:rounded-2xl p-2 sm:p-4 text-center`}>
+                              <p className="newq text-xs text-gray-500 font-bold uppercase leading-tight">{label}</p>
+                              <p className={`newq text-xs sm:text-base font-black ${vc} break-all mt-0.5`}>{val}</p>
+                              {sub && <p className="newq text-xs text-gray-400 mt-0.5 hidden sm:block">{sub}</p>}
+                            </div>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          {[
+                            { label: "Total Sent", val: fmt(c.inr), bg: "bg-white", vc: "text-gray-800" },
+                            { label: "Free (₹10L)", val: fmt(TCS_THRESHOLD), bg: "bg-green-100", vc: "text-green-700", sub: "No TCS" },
+                            { label: "Taxable", val: fmt(c.taxableRemit), bg: "bg-sky-100", vc: "text-sky-700", sub: `${fmt(c.inr)} − ₹10L` },
+                            { label: "TCS @ 5%", val: `- ${fmt(c.tcsAmount)}`, bg: "bg-sky-200", vc: "text-sky-800", sub: "Refundable" },
+                          ].map(({ label, val, bg, vc, sub }) => (
+                            <div key={label} className={`${bg} rounded-xl sm:rounded-2xl p-2 sm:p-4 text-center`}>
+                              <p className="newq text-xs text-gray-500 font-bold uppercase leading-tight">{label}</p>
+                              <p className={`newq text-xs sm:text-base font-black ${vc} break-all mt-0.5`}>{val}</p>
+                              {sub && <p className="newq text-xs text-gray-400 mt-0.5 hidden sm:block">{sub}</p>}
+                            </div>
+                          ))}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -506,14 +657,14 @@ const netProfit = grossProfit - estTax - indTax;
                         </div>
                         <div className="flex justify-between">
                           <span className="newq text-gray-500">Taxable per trade</span>
-                          <span className="newq font-bold text-sky-600">{fmt(c.taxableRemit)}</span>
+                          <span className={`newq font-bold ${tcsModeEnabled ? "text-purple-600" : "text-sky-600"}`}>{fmt(c.taxableRemit)}</span>
                         </div>
                         <div className="border-t border-gray-100 pt-1 flex justify-between font-black">
                           <span className="newq text-gray-600">Total</span>
-                          <span className="newq text-sky-600">{fmt(val)}</span>
+                          <span className={`newq ${tcsModeEnabled ? "text-purple-600" : "text-sky-600"}`}>{fmt(val)}</span>
                         </div>
                       </div>
-                      <p className="newq text-xs text-sky-500 mt-2 font-semibold">⚡ Fully refundable via ITR</p>
+                      <p className="newq text-xs text-amber-500 mt-2 font-semibold">⚡ Fully refundable via ITR</p>
                     </div>
                   ))}
                 </div>
@@ -537,7 +688,7 @@ const netProfit = grossProfit - estTax - indTax;
                   <StatCard label="Remit Charges" value={fmt(c.totalRemitCharge)} bg="bg-amber-100" icon={CreditCard} sub={`${c.remitChargeRatio.toFixed(2)}% of principal`} />
                 )}
                 {c.hasTCS && (
-                  <StatCard label="TCS (5% excess)" value={fmt(c.tcsAmount)} bg="bg-sky-100" icon={Landmark} sub="Refundable via ITR" />
+                  <StatCard label="TCS" value={fmt(c.tcsAmount)} bg={tcsModeEnabled ? "bg-purple-100" : "bg-sky-100"} icon={Landmark} sub={tcsModeEnabled ? "5% on full amount" : "Refundable via ITR"} />
                 )}
                 <StatCard label="Gross Profit" value={fmt(c.grossProfit)} bg={c.grossProfit >= 0 ? "bg-teal-100" : "bg-red-100"} icon={c.grossProfit >= 0 ? TrendingUp : TrendingDown} sub={`ROI: ${c.roi.toFixed(2)}%`} />
                 <StatCard label="Estonia Tax 20%" value={fmt(c.estTax)} bg="bg-orange-100" icon={Building2} sub="On gross profit" />
@@ -694,7 +845,7 @@ const netProfit = grossProfit - estTax - indTax;
                 {[
                   { l: "Raw Spread (Received − Sent)", v: fmt(c.grossProfitBeforeCharge), sep: false },
                   ...(c.hasRemitCharge ? [{ l: "Less: Remittance Charges", v: `- ${fmt(c.totalRemitCharge)}`, c: "text-amber-600", sep: false }] : []),
-                  ...(c.hasTCS ? [{ l: `Less: TCS 5% on ${fmt(c.taxableRemit)}`, v: `- ${fmt(c.tcsAmount)}`, c: "text-sky-600", sep: false, sub: "Refundable" }] : []),
+                  ...(c.hasTCS ? [{ l: `Less: TCS ${tcsModeEnabled ? "(5% on full)" : "5% on excess"}`, v: `- ${fmt(c.tcsAmount)}`, c: tcsModeEnabled ? "text-purple-600" : "text-sky-600", sep: false, sub: "Refundable" }] : []),
                   { l: "Gross Profit (pre-tax)", v: fmt(c.grossProfit), c: "text-teal-700", sep: true, bold: true },
                   { l: "Less: Estonia Tax (20%)", v: `- ${fmt(c.estTax)}`, c: "text-orange-500", sep: false },
                   { l: "Less: India Tax 115BBH (30%)", v: `- ${fmt(c.indTax)}`, c: "text-red-500", sep: false },
@@ -705,14 +856,14 @@ const netProfit = grossProfit - estTax - indTax;
                       <span className={`newq ${bold ? "font-black text-gray-700" : "text-gray-500"} flex-1`}>{l}</span>
                       <span className={`newq font-black ${col || "text-gray-800"} text-right shrink-0`}>{v}</span>
                     </div>
-                    {s && <p className="newq text-xs text-sky-400 font-semibold pl-2">{s}</p>}
+                    {s && <p className="newq text-xs text-amber-400 font-semibold pl-2">{s}</p>}
                   </div>
                 ))}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
                 {[
                   ...(c.hasRemitCharge ? [{ l: "Remit", v: fmt(c.totalRemitCharge), c: "text-amber-500" }] : []),
-                  ...(c.hasTCS ? [{ l: "TCS", v: fmt(c.tcsAmount), c: "text-sky-500", sub: "Refundable" }] : []),
+                  ...(c.hasTCS ? [{ l: "TCS", v: fmt(c.tcsAmount), c: tcsModeEnabled ? "text-purple-500" : "text-sky-500", sub: "Refundable" }] : []),
                   { l: "Total Tax", v: fmt(c.totalTax), c: "text-red-500" },
                   { l: "Eff. Tax Rate", v: `${c.effTaxRate.toFixed(1)}%`, c: "text-orange-500" },
                   { l: "Net Profit", v: fmt(c.netProfit), c: "text-emerald-600" },
@@ -721,7 +872,7 @@ const netProfit = grossProfit - estTax - indTax;
                   <div key={l} className="bg-white rounded-xl sm:rounded-2xl p-3 sm:p-4 text-center">
                     <p className="newq text-xs text-gray-400 font-bold uppercase leading-tight">{l}</p>
                     <p className={`newq text-sm sm:text-xl font-black ${col} mt-1 break-all`}>{v}</p>
-                    {s && <p className="newq text-xs text-sky-400 font-semibold">{s}</p>}
+                    {s && <p className="newq text-xs text-amber-400 font-semibold">{s}</p>}
                   </div>
                 ))}
               </div>
@@ -736,7 +887,7 @@ const netProfit = grossProfit - estTax - indTax;
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4 mb-4">
                   <StatCard label="Monthly Gross" value={fmt(c.mGross)} bg="bg-teal-100" icon={TrendingUp} />
                   {c.hasRemitCharge && <StatCard label="Remit (month)" value={fmt(c.mRemitCharge)} bg="bg-amber-100" icon={CreditCard} />}
-                  {c.hasTCS && <StatCard label="TCS (month)" value={fmt(c.mTCS)} bg="bg-sky-100" icon={Landmark} sub="Refundable" />}
+                  {c.hasTCS && <StatCard label="TCS (month)" value={fmt(c.mTCS)} bg={tcsModeEnabled ? "bg-purple-100" : "bg-sky-100"} icon={Landmark} sub="Refundable" />}
                   <StatCard label="Estonia Tax" value={fmt(c.mEstTax)} bg="bg-orange-100" icon={Building2} />
                   <StatCard label="India Tax" value={fmt(c.mIndTax)} bg="bg-red-100" icon={Landmark} />
                   <StatCard label="Monthly Net" value={fmt(c.mNet)} bg="bg-emerald-100" icon={Target} sub="After all deductions" highlight={c.mNet > 0} />
@@ -807,7 +958,7 @@ const netProfit = grossProfit - estTax - indTax;
                         { l: "Annual ROI", v: `${c.netRoi.toFixed(2)}%`, c: "text-blue-600", sub: "per trade" },
                         { l: "Tax/Year", v: fmt(c.yTotalTax), c: "text-red-500", sub: "EE + IN" },
                         ...(c.hasRemitCharge ? [{ l: "Remit/Year", v: fmt(c.yRemitCharge), c: "text-amber-500" }] : []),
-                        ...(c.hasTCS ? [{ l: "TCS/Year", v: fmt(c.yTCS), c: "text-sky-500", sub: "Refundable" }] : []),
+                        ...(c.hasTCS ? [{ l: "TCS/Year", v: fmt(c.yTCS), c: tcsModeEnabled ? "text-purple-500" : "text-sky-500", sub: "Refundable" }] : []),
                       ].map(({ l, v, c: col, sub: s }) => (
                         <div key={l} className="bg-white rounded-xl sm:rounded-2xl px-3 sm:px-4 py-2 sm:py-3 text-center shadow-sm">
                           <p className="newq text-xs text-gray-400 font-bold uppercase">{l}</p>
@@ -822,7 +973,7 @@ const netProfit = grossProfit - estTax - indTax;
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4 mb-4">
                   <StatCard label="Yearly Gross" value={fmt(c.yGross)} bg="bg-teal-100" icon={TrendingUp} sub={`${c.yDays} days`} />
                   {c.hasRemitCharge && <StatCard label="Remit (year)" value={fmt(c.yRemitCharge)} bg="bg-amber-100" icon={CreditCard} />}
-                  {c.hasTCS && <StatCard label="TCS (year)" value={fmt(c.yTCS)} bg="bg-sky-100" icon={Landmark} sub="Refundable" />}
+                  {c.hasTCS && <StatCard label="TCS (year)" value={fmt(c.yTCS)} bg={tcsModeEnabled ? "bg-purple-100" : "bg-sky-100"} icon={Landmark} sub="Refundable" />}
                   <StatCard label="Estonia Tax" value={fmt(c.yEstTax)} bg="bg-orange-100" icon={Building2} sub="20%" />
                   <StatCard label="After Estonia" value={fmt(c.yAfterEst)} bg="bg-lime-100" icon={Globe2} />
                   <StatCard label="India Tax" value={fmt(c.yIndTax)} bg="bg-red-100" icon={Landmark} sub="30%" />
@@ -931,7 +1082,7 @@ const netProfit = grossProfit - estTax - indTax;
         <div className="text-center py-3 sm:py-4 px-2">
           <p className="newq text-xs sm:text-sm text-gray-400">ArbiFlow • INR → EUR → USDT → INR Arbitrage Tracker</p>
           <p className="newq text-xs text-gray-400 mt-1 leading-relaxed">
-            Tax rates indicative. Consult a tax advisor. India: 115BBH @30% | Estonia: @20% | LRS TCS: 5% on excess above ₹10L (refundable via ITR)
+            Tax rates indicative. Consult a tax advisor. India: 115BBH @30% | Estonia: @20% | LRS TCS: 5% on excess above ₹10L (refundable via ITR) | Full TCS Mode: 5% on full amount
           </p>
         </div>
       </div>
